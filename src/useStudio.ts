@@ -258,6 +258,56 @@ export function useStudio() {
     })
   }
 
+  function renumberScenes(document: StudioDocument) {
+    document.scenes.forEach((scene, index) => {
+      scene.code = `S${String(index + 1).padStart(2, '0')}`
+    })
+  }
+
+  function splitScene(sceneId: string, cueId: string) {
+    const scene = state.value.document.scenes.find((item) => item.id === sceneId)
+    if (!scene) return
+    const cueIndex = scene.cues.findIndex((cue) => cue.id === cueId)
+    // 断点提示留在前一场，其后至少还要有一条提示，保证断点两侧都留有提示项
+    if (cueIndex < 0 || cueIndex >= scene.cues.length - 1) return
+    const movedCount = scene.cues.length - cueIndex - 1
+    const breakpointText = scene.cues[cueIndex].text.slice(0, 12)
+    const newSceneId = uid('scene')
+    commit(
+      `断开场次 ${scene.code}`,
+      (document) => {
+        const sceneIndex = document.scenes.findIndex((item) => item.id === sceneId)
+        if (sceneIndex < 0) return
+        const target = document.scenes[sceneIndex]
+        const splitAt = target.cues.findIndex((cue) => cue.id === cueId)
+        if (splitAt < 0 || splitAt >= target.cues.length - 1) return
+        const movedCues = target.cues.splice(splitAt + 1)
+        // 限额按两半各自的预计时长比例拆分，两半之和等于原场次限额
+        const originalLimit = target.durationLimit
+        const firstDuration = durationOfScene(target)
+        const secondDuration = durationOfScene({ ...target, cues: movedCues })
+        const combined = firstDuration + secondDuration
+        const firstLimit = combined > 0 ? Math.round((originalLimit * firstDuration) / combined) : Math.round(originalLimit / 2)
+        const secondLimit = originalLimit - firstLimit
+        target.durationLimit = firstLimit
+        document.scenes.splice(sceneIndex + 1, 0, {
+          id: newSceneId,
+          code: '',
+          title: `${target.title}（下）`,
+          location: target.location,
+          timeOfDay: target.timeOfDay,
+          transition: target.transition,
+          durationLimit: secondLimit,
+          cues: movedCues
+        })
+        // 断开后所有场次按顺序重排编号，制作稿不出现重号或跳号
+        renumberScenes(document)
+      },
+      `「${breakpointText}」之后断开，${movedCount} 条提示移入紧随其后的新场，限额按预计时长拆分，后续场次号依次重排。`
+    )
+    selectedSceneId.value = newSceneId
+  }
+
   function acceptChange(changeId: string) {
     const change = state.value.pending.find((item) => item.id === changeId)
     if (!change || change.status !== 'pending') return
@@ -384,6 +434,7 @@ export function useStudio() {
     deleteCue,
     moveCue,
     moveScene,
+    splitScene,
     acceptChange,
     rejectChange,
     acceptAll,

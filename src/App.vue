@@ -39,6 +39,7 @@ const {
   deleteCue,
   moveCue,
   moveScene,
+  splitScene,
   acceptChange,
   rejectChange,
   acceptAll,
@@ -303,6 +304,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
                   <n-select class="kind-select" size="small" :value="cue.kind" :options="kindOptions" @update:value="changeCueKind(cue, $event)" />
                   <n-tag size="small" :bordered="false">{{ cueName(cue) }}</n-tag>
                   <span class="duration-pill">{{ durationOfCue(cue).toFixed(1) }}s</span>
+                  <n-button
+                    size="tiny"
+                    tertiary
+                    :disabled="index === selectedScene.cues.length - 1"
+                    :title="index === selectedScene.cues.length - 1 ? '最后一条之后没有可移出的提示，不能作为断点' : '在此断开：本条留在本场，之后的提示整段移入紧随其后的新场'"
+                    @click="splitScene(selectedScene.id, cue.id)"
+                  >断开</n-button>
                   <n-button size="tiny" tertiary type="error" @click="deleteCue(cue.id)">删除</n-button>
                 </div>
 
