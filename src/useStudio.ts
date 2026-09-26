@@ -258,6 +258,53 @@ export function useStudio() {
     })
   }
 
+  function splitScene(sceneId: string, cueId: string) {
+    const sceneIndex = state.value.document.scenes.findIndex((scene) => scene.id === sceneId)
+    const scene = state.value.document.scenes[sceneIndex]
+    if (!scene) return
+    const splitIndex = scene.cues.findIndex((cue) => cue.id === cueId)
+    // 断点提示留在前一场，其后至少要有一条提示挪入新场，保证两边都不空。
+    if (splitIndex < 0 || splitIndex >= scene.cues.length - 1) return
+    const firstCues = scene.cues.slice(0, splitIndex + 1)
+    const movedCues = scene.cues.slice(splitIndex + 1)
+    const firstDuration = Number(firstCues.reduce((total, cue) => total + durationOfCue(cue), 0).toFixed(1))
+    const movedDuration = Number(movedCues.reduce((total, cue) => total + durationOfCue(cue), 0).toFixed(1))
+    const totalDurationOfHalves = firstDuration + movedDuration
+    // 限额按两半各自的预计时长比例分配，余数给后一场，保证两份相加等于原限额。
+    const firstLimit = totalDurationOfHalves > 0
+      ? Math.round((scene.durationLimit * firstDuration) / totalDurationOfHalves)
+      : Math.round(scene.durationLimit / 2)
+    const movedLimit = scene.durationLimit - firstLimit
+    const newSceneId = uid('scene')
+    const newCode = `S${String(sceneIndex + 2).padStart(2, '0')}`
+    commit(
+      `断开场次 ${scene.code}（第 ${splitIndex + 1} 条后）`,
+      (document) => {
+        const targetIndex = document.scenes.findIndex((item) => item.id === sceneId)
+        const target = document.scenes[targetIndex]
+        if (!target) return
+        const moved = target.cues.splice(splitIndex + 1)
+        target.durationLimit = firstLimit
+        document.scenes.splice(targetIndex + 1, 0, {
+          id: newSceneId,
+          code: newCode,
+          title: `${target.title}（下）`,
+          location: target.location,
+          timeOfDay: target.timeOfDay,
+          transition: target.transition,
+          durationLimit: movedLimit,
+          cues: moved
+        })
+        // 其后的场次号依次后挪一位，制作稿不重号、不跳号。
+        document.scenes.forEach((item, index) => {
+          item.code = `S${String(index + 1).padStart(2, '0')}`
+        })
+      },
+      `在「${scene.cues[splitIndex].text.slice(0, 18)}」后断开，${movedCues.length} 条提示挪入新场 ${newCode}；限额 ${scene.durationLimit} 秒按预计时长 ${firstDuration}s / ${movedDuration}s 分为 ${firstLimit} + ${movedLimit} 秒，后续场次号依次后移。退回可恢复原场次与编号。`
+    )
+    selectedSceneId.value = newSceneId
+  }
+
   function acceptChange(changeId: string) {
     const change = state.value.pending.find((item) => item.id === changeId)
     if (!change || change.status !== 'pending') return
@@ -384,6 +431,7 @@ export function useStudio() {
     deleteCue,
     moveCue,
     moveScene,
+    splitScene,
     acceptChange,
     rejectChange,
     acceptAll,
